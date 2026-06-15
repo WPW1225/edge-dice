@@ -1099,16 +1099,23 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshAdminUI();
     updateSyncStatus(false);
 
-    // 尝试恢复 Firebase 配置
-    const savedConfig = ['apiKey','authDomain','databaseURL','projectId','appId']
-        .every(f => localStorage.getItem('ed-fb-' + f));
-    if (savedConfig) {
-        const config = {};
-        ['apiKey','authDomain','databaseURL','projectId','appId'].forEach(f => {
-            config[f] = localStorage.getItem('ed-fb-' + f);
-        });
-        initFirebase(config);
-    }
+    // 自动初始化 Firebase
+    const firebaseConfig = {
+        apiKey: "AIzaSyDExsSNaBLwARiRyPzPxic_MGRNikH0e6w",
+        authDomain: "edgedice-e856f.firebaseapp.com",
+        databaseURL: "https://edgedice-e856f-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "edgedice-e856f",
+        storageBucket: "edgedice-e856f.firebasestorage.app",
+        messagingSenderId: "510909944081",
+        appId: "1:510909944081:web:97b59d086c7b6abebc3cb0",
+        measurementId: "G-2WSVKNYCZS"
+    };
+    initFirebase(firebaseConfig);
+
+    // 同时保存到 localStorage 供设置面板使用
+    Object.entries(firebaseConfig).forEach(([k, v]) => {
+        if (v) localStorage.setItem('ed-fb-' + k, v);
+    });
 });
 </script>
 </body>
