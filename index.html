@@ -906,17 +906,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load global settings from localStorage
     EDGES_PER_POINT = parseInt(localStorage.getItem('ed-epp')) || 10;
     DEFAULT_EDGE_COUNT = parseInt(localStorage.getItem('ed-init')) || 100;
-    // Auto-init Firebase
-    var hasConfig = ['apiKey','authDomain','databaseURL','projectId','appId'].every(function(f) {
-        return localStorage.getItem('ed-fb-' + f);
+    // Auto-init Firebase with hardcoded config
+    var firebaseConfig = {
+        apiKey: "AIzaSyDExsSNaBLwARiRyPzPxic_MGRNikH0e6w",
+        authDomain: "edgedice-e856f.firebaseapp.com",
+        databaseURL: "https://edgedice-e856f-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "edgedice-e856f",
+        storageBucket: "edgedice-e856f.firebasestorage.app",
+        messagingSenderId: "510909944081",
+        appId: "1:510909944081:web:97b59d086c7b6abebc3cb0",
+        measurementId: "G-2WSVKNYCZS"
+    };
+    initFirebase(firebaseConfig);
+    Object.entries(firebaseConfig).forEach(function(entry) {
+        if (entry[1]) localStorage.setItem('ed-fb-' + entry[0], entry[1]);
     });
-    if (hasConfig) {
-        var config = {};
-        ['apiKey','authDomain','databaseURL','projectId','appId'].forEach(function(f) {
-            config[f] = localStorage.getItem('ed-fb-' + f);
-        });
-        initFirebase(config);
-    }
     // Enter name with Enter key
     document.getElementById('player-name-input').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') enterGame();
