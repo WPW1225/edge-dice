@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>边缘骰子 · Edge Dice</title>
+    <meta name="description" content="掷出1即为边缘 — 一个带云同步的骰子博弈游戏">
+    <meta name="theme-color" content="#07070e">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+<style>
+:root{
+    --bg:#07070e;--bg2:#0c0c18;--card:#10101e;--card2:#14142a;
+    --accent:#d4941a;--accent-glow:rgba(212,148,26,0.35);--accent2:#f0b840;
+    --fg:#e8e4d9;--muted:#6e6b62;--danger:#e74c3c;--danger-glow:rgba(231,76,60,0.3);
+    --success:#2ecc71;--success-glow:rgba(46,204,113,0.3);--border:#252538;--radius:14px;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Noto Sans SC',sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;overflow-x:hidden;}
+#bg-canvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;opacity:0.6;}
+
+/* ---- Pages ---- */
+.page{display:none;position:relative;z-index:1;min-height:100vh;animation:fadeUp .5s ease;}
+.page.active{display:block;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+@keyframes resultPop{from{opacity:0;transform:scale(0.8) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
+@keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(40px)}}
+@keyframes numFlash{0%{transform:scale(1)}30%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes banPulse{0%,100%{opacity:1}50%{opacity:0.6}}
+@keyframes diceIdle{0%,100%{transform:rotateX(-15deg) rotateY(15deg)}50%{transform:rotateX(-10deg) rotateY(25deg)}}
+@keyframes dice-spin{
+    0%{transform:rotateX(0) rotateY(0) rotateZ(0)}
+    15%{transform:rotateX(120deg) rotateY(60deg) rotateZ(30deg)}
+    30%{transform:rotateX(240deg) rotateY(180deg) rotateZ(-20deg)}
+    50%{transform:rotateX(400deg) rotateY(300deg) rotateZ(60deg)}
+    70%{transform:rotateX(600deg) rotateY(420deg) rotateZ(-40deg)}
+    85%{transform:rotateX(780deg) rotateY(540deg) rotateZ(20deg)}
+    100%{transform:rotateX(900deg) rotateY(630deg) rotateZ(0)}
+}
+
+/* ---- Top Bar ---- */
+.top-bar{display:flex;align-items:center;justify-content:space-between;padding:20px 28px;position:sticky;top:0;z-index:10;background:linear-gradient(180deg,rgba(7,7,14,.95) 60%,rgba(7,7,14,0));backdrop-filter:blur(8px);}
+.back-btn{background:none;border:1px solid var(--border);color:var(--muted);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;transition:all .2s;font-family:inherit;}
+.back-btn:hover{border-color:var(--accent);color:var(--accent);}
+.page-title{font-family:'Cinzel',serif;font-size:20px;font-weight:900;letter-spacing:4px;color:var(--accent);}
+.top-bar-right{display:flex;align-items:center;gap:8px;}
+.sync-indicator{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);padding:4px 10px;border-radius:20px;background:rgba(255,255,255,0.03);border:1px solid var(--border);}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);}
+.sync-dot.online{background:var(--success);box-shadow:0 0 6px var(--success-glow);}
+.sync-dot.offline{background:var(--danger);}
+
+/* ---- Home ---- */
+.home-content{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px;text-align:center;}
+.home-title{font-family:'Cinzel',serif;font-size:clamp(36px,8vw,72px);font-weight:900;letter-spacing:6px;color:var(--accent);text-shadow:0 0 60px var(--accent-glow),0 0 120px rgba(212,148,26,0.15);margin-bottom:8px;}
+.home-subtitle{font-size:16px;color:var(--muted);letter-spacing:2px;margin-bottom:60px;font-weight:300;}
+.role-cards{display:flex;gap:32px;flex-wrap:wrap;justify-content:center;}
+.role-card{width:280px;padding:48px 32px;border-radius:20px;background:linear-gradient(145deg,var(--card),var(--card2));border:1px solid var(--border);cursor:pointer;transition:all .35s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden;}
+.role-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0;transition:opacity .35s;}
+.role-card:hover{transform:translateY(-6px);border-color:var(--accent);box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 40px var(--accent-glow);}
+.role-card:hover::before{opacity:1;}
+.role-card i{font-size:48px;color:var(--accent);margin-bottom:20px;display:block;}
+.role-card h2{font-family:'Cinzel',serif;font-size:22px;font-weight:700;margin-bottom:12px;letter-spacing:2px;}
+.role-card p{font-size:14px;color:var(--muted);line-height:1.6;}
+.role-card .lock-hint{margin-top:16px;font-size:12px;color:var(--accent);opacity:0.7;display:flex;align-items:center;justify-content:center;gap:6px;}
+.home-footer{margin-top:48px;display:flex;gap:16px;align-items:center;}
+.home-footer a{font-size:12px;color:var(--muted);cursor:pointer;text-decoration:none;transition:color .2s;}
+.home-footer a:hover{color:var(--accent);}
+
+/* ---- Cards & Stats ---- */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px;transition:border-color .3s;}
+.card:hover{border-color:rgba(212,148,26,0.2);}
+.card-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;}
+.card-value{font-size:clamp(28px,5vw,42px);font-weight:900;font-family:'Cinzel',serif;}
+.card-value.accent{color:var(--accent);}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;padding:0 24px 20px;max-width:900px;margin:0 auto;}
+.main-container{max-width:900px;margin:0 auto;padding:0 20px 40px;}
+
+/* ---- Progress ---- */
+.progress-wrap{margin-top:8px;}
+.progress-bar{height:8px;background:var(--border);border-radius:4px;overflow:hidden;position:relative;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width .5s cubic-bezier(.4,0,.2,1);position:relative;}
+.progress-fill::after{content:'';position:absolute;right:0;top:0;bottom:0;width:20px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.3));border-radius:0 4px 4px 0;}
+.progress-text{font-size:13px;color:var(--muted);margin-top:6px;}
+
+/* ---- Dice ---- */
+.dice-section{display:flex;flex-direction:column;align-items:center;padding:40px 24px;}
+.dice-scene{width:130px;height:130px;perspective:600px;margin-bottom:32px;}
+.dice-cube{width:100%;height:100%;position:relative;transform-style:preserve-3d;transition:transform .6s cubic-bezier(.2,.8,.3,1);}
+.dice-cube.spinning{animation:dice-spin 1.3s cubic-bezier(.1,.8,.2,1);}
+.dice-face{position:absolute;width:130px;height:130px;border-radius:16px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:18px;gap:4px;background:linear-gradient(145deg,#1a1a30,#12122a);border:2px solid rgba(212,148,26,0.4);box-shadow:inset 0 0 30px rgba(0,0,0,0.4);}
+.dice-face .dot-cell{display:flex;align-items:center;justify-content:center;}
+.dice-face .dot{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 35%,var(--accent2),var(--accent));box-shadow:0 0 10px var(--accent-glow),0 2px 4px rgba(0,0,0,0.5);}
+.face-1{transform:translateZ(65px);}.face-6{transform:rotateY(180deg) translateZ(65px);}.face-2{transform:rotateY(90deg) translateZ(65px);}.face-5{transform:rotateY(-90deg) translateZ(65px);}.face-3{transform:rotateX(90deg) translateZ(65px);}.face-4{transform:rotateX(-90deg) translateZ(65px);}
+.dice-glow{position:absolute;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,var(--accent-glow),transparent 70%);pointer-events:none;opacity:0;transition:opacity .3s;top:50%;left:50%;transform:translate(-50%,-50%);z-index:-1;}
+.dice-glow.show{opacity:1;}
+.dice-cube.idle{animation:diceIdle 4s ease-in-out infinite;}
+
+/* ---- Buttons ---- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 28px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;border:none;font-family:inherit;transition:all .25s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden;}
+.btn:active{transform:scale(0.96);}
+.btn-accent{background:linear-gradient(135deg,var(--accent),#b87a10);color:#0a0a0f;box-shadow:0 4px 20px var(--accent-glow);}
+.btn-accent:hover{box-shadow:0 6px 30px var(--accent-glow);transform:translateY(-1px);}
+.btn-accent:disabled{opacity:0.4;cursor:not-allowed;transform:none!important;box-shadow:none;}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--fg);}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent);}
+.btn-outline:disabled{opacity:0.3;cursor:not-allowed;}
+.btn-danger{background:rgba(231,76,60,0.15);border:1px solid rgba(231,76,60,0.3);color:var(--danger);}
+.btn-danger:hover{background:rgba(231,76,60,0.25);}
+.btn-sm{padding:8px 16px;font-size:13px;border-radius:8px;}
+.btn-group{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+
+/* ---- Edge Section ---- */
+.edge-section{padding:0 24px 20px;}
+.edge-section .card{display:flex;flex-wrap:wrap;align-items:center;gap:16px;}
+.edge-label{font-size:14px;color:var(--muted);font-weight:500;min-width:80px;}
+
+/* ---- Ban Banner ---- */
+.ban-banner{background:linear-gradient(135deg,rgba(231,76,60,0.12),rgba(231,76,60,0.05));border:1px solid rgba(231,76,60,0.3);border-radius:var(--radius);padding:20px 24px;text-align:center;margin:0 24px 20px;}
+.ban-banner i{font-size:24px;color:var(--danger);margin-bottom:8px;display:block;}
+.ban-banner .ban-text{color:var(--danger);font-size:15px;font-weight:600;margin-bottom:4px;}
+.ban-banner .ban-timer{font-family:'Cinzel',serif;font-size:28px;color:var(--danger);font-weight:700;}
+.ban-timer-pulse{animation:banPulse 2s ease infinite;}
+
+/* ---- History ---- */
+.history-list{max-height:300px;overflow-y:auto;padding-right:8px;}
+.history-list::-webkit-scrollbar{width:4px;}.history-list::-webkit-scrollbar-track{background:transparent;}.history-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.history-item{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;margin-bottom:6px;background:rgba(255,255,255,0.02);border:1px solid transparent;transition:all .2s;font-size:13px;}
+.history-item:hover{border-color:var(--border);background:rgba(255,255,255,0.04);}
+.history-dot{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-weight:900;font-size:14px;flex-shrink:0;}
+.history-dot.good{background:rgba(46,204,113,0.15);color:var(--success);}.history-dot.bad{background:rgba(231,76,60,0.15);color:var(--danger);}.history-dot.neutral{background:rgba(212,148,26,0.15);color:var(--accent);}
+.history-desc{flex:1;color:var(--muted);}.history-time{font-size:11px;color:var(--border);white-space:nowrap;}
+
+/* ---- Admin ---- */
+.admin-section{margin-bottom:28px;}
+.admin-section-title{font-size:14px;color:var(--accent);letter-spacing:2px;text-transform:uppercase;font-weight:700;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+.admin-row{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;}
+.admin-row label{font-size:14px;color:var(--muted);min-width:140px;}
+.admin-row input[type="number"],.admin-row input[type="text"]{background:var(--bg);border:1px solid var(--border);color:var(--fg);padding:8px 14px;border-radius:8px;font-size:15px;width:140px;font-family:inherit;outline:none;transition:border-color .2s;}
+.admin-row input:focus{border-color:var(--accent);}
+.admin-status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px;}
+.admin-stat{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+.admin-stat .stat-label{font-size:11px;color:var(--muted);letter-spacing:1px;margin-bottom:4px;}
+.admin-stat .stat-value{font-size:22px;font-weight:700;font-family:'Cinzel',serif;}
+
+/* ---- Toast ---- */
+#toast-container{position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none;}
+.toast{padding:14px 22px;border-radius:10px;font-size:14px;font-weight:500;pointer-events:auto;animation:toastIn .4s ease;max-width:340px;box-shadow:0 10px 40px rgba(0,0,0,0.5);backdrop-filter:blur(12px);border:1px solid;}
+.toast.success{background:rgba(46,204,113,0.12);border-color:rgba(46,204,113,0.3);color:var(--success);}
+.toast.error{background:rgba(231,76,60,0.12);border-color:rgba(231,76,60,0.3);color:var(--danger);}
+.toast.info{background:rgba(212,148,26,0.12);border-color:rgba(212,148,26,0.3);color:var(--accent);}
+.toast.out{animation:toastOut .3s ease forwards;}
+.num-flash{animation:numFlash .5s ease;}
+.num-up{color:var(--danger)!important;}.num-down{color:var(--success)!important;}
+
+/* ---- Overlays ---- */
+.overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:200;background:rgba(7,7,14,0.88);backdrop-filter:blur(10px);display:none;align-items:center;justify-content:center;}
+.overlay.show{display:flex;animation:fadeIn .25s ease;}
+.overlay-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:36px 40px;text-align:center;max-width:400px;width:90%;animation:resultPop .4s cubic-bezier(.2,.8,.3,1);}
+.overlay-card.danger-border{border-color:rgba(231,76,60,0.3);}
+.overlay-icon{font-size:40px;margin-bottom:16px;}
+.overlay-icon.danger{color:var(--danger);}.overlay-icon.accent{color:var(--accent);}.overlay-icon.success{color:var(--success);}
+.overlay-msg{font-size:16px;font-weight:600;margin-bottom:8px;line-height:1.5;}
+.overlay-sub{font-size:13px;color:var(--muted);margin-bottom:24px;}
+.overlay-btns{display:flex;gap:12px;justify-content:center;}
+
+/* ---- Result Overlay ---- */
+.result-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:100;background:rgba(7,7,14,0.85);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;}
+.result-overlay.show{display:flex;animation:fadeIn .3s ease;}
+.result-card{background:var(--card);border:1px solid var(--border);border-radius:24px;padding:48px 56px;text-align:center;max-width:420px;width:90%;animation:resultPop .5s cubic-bezier(.2,.8,.3,1);}
+.result-card .result-num{font-family:'Cinzel',serif;font-size:72px;font-weight:900;margin-bottom:8px;}
+.result-card .result-desc{font-size:18px;font-weight:600;margin-bottom:8px;}
+.result-card .result-detail{font-size:14px;color:var(--muted);margin-bottom:28px;line-height:1.6;}
+
+/* ---- Login Overlay ---- */
+.login-card{max-width:380px;padding:40px 36px;}
+.login-card .login-icon{font-size:48px;color:var(--accent);margin-bottom:20px;}
+.login-card .login-title{font-family:'Cinzel',serif;font-size:22px;font-weight:700;color:var(--accent);letter-spacing:3px;margin-bottom:6px;}
+.login-card .login-sub{font-size:13px;color:var(--muted);margin-bottom:28px;}
+.login-input-wrap{position:relative;margin-bottom:16px;text-align:left;}
+.login-input-wrap label{display:block;font-size:12px;color:var(--muted);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;}
+.login-input-wrap input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--fg);padding:12px 44px 12px 16px;border-radius:10px;font-size:15px;font-family:inherit;outline:none;transition:border-color .2s;}
+.login-input-wrap input:focus{border-color:var(--accent);}
+.login-input-wrap input::placeholder{color:var(--border);}
+.login-input-wrap .toggle-pw{position:absolute;right:12px;bottom:12px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;transition:color .2s;}
+.login-input-wrap .toggle-pw:hover{color:var(--accent);}
+.login-error{font-size:12px;color:var(--danger);margin-bottom:12px;min-height:18px;}
+.login-btns{display:flex;gap:12px;justify-content:center;margin-top:8px;}
+.login-btns .btn{flex:1;}
+.pw-strength{display:flex;gap:4px;margin-top:8px;margin-bottom:4px;}
+.pw-strength-bar{flex:1;height:3px;border-radius:2px;background:var(--border);transition:background .3s;}
+.pw-strength-bar.weak{background:var(--danger);}.pw-strength-bar.medium{background:var(--accent);}.pw-strength-bar.strong{background:var(--success);}
+.pw-strength-text{font-size:11px;color:var(--muted);text-align:left;margin-bottom:8px;}
+
+/* ---- Setup Overlay ---- */
+.setup-card{max-width:440px;padding:36px 32px;text-align:left;}
+.setup-card .setup-icon{font-size:40px;color:var(--accent);margin-bottom:16px;text-align:center;}
+.setup-card .setup-title{font-family:'Cinzel',serif;font-size:20px;font-weight:700;color:var(--accent);letter-spacing:2px;margin-bottom:6px;text-align:center;}
+.setup-card .setup-sub{font-size:13px;color:var(--muted);margin-bottom:20px;text-align:center;line-height:1.6;}
+.setup-card .step{font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.7;}
+.setup-card .step b{color:var(--fg);}
+.setup-card .step-num{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--bg);font-size:11px;font-weight:700;margin-right:6px;flex-shrink:0;}
+.setup-input-group{margin-bottom:12px;}
+.setup-input-group label{display:block;font-size:11px;color:var(--muted);letter-spacing:1px;margin-bottom:4px;text-transform:uppercase;}
+.setup-input-group input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--fg);padding:10px 14px;border-radius:8px;font-size:13px;font-family:monospace;outline:none;transition:border-color .2s;}
+.setup-input-group input:focus{border-color:var(--accent);}
+.setup-input-group input::placeholder{color:#333;}
+
+/* ---- Responsive ---- */
+@media(max-width:640px){
+    .stats-grid{grid-template-columns:repeat(2,1fr);gap:10px;padding:0 16px 16px;}
+    .card{padding:16px;}.card-value{font-size:24px;}
+    .dice-scene{width:100px;height:100px;}.dice-face{width:100px;height:100px;padding:12px;}.dice-face .dot{width:16px;height:16px;}
+    .face-1{transform:translateZ(50px);}.face-6{transform:rotateY(180deg) translateZ(50px);}.face-2{transform:rotateY(90deg) translateZ(50px);}.face-5{transform:rotateY(-90deg) translateZ(50px);}.face-3{transform:rotateX(90deg) translateZ(50px);}.face-4{transform:rotateX(-90deg) translateZ(50px);}
+    .role-cards{gap:16px;}.role-card{width:100%;max-width:300px;padding:32px 24px;}
+    .result-card,.overlay-card,.login-card,.setup-card{padding:28px 20px;}
+    .setup-card{max-width:95%;}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms!important;transition-duration:0.01ms!important;}}
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<!-- ========== 首页 ========== -->
+<div id="home-page" class="page active">
+    <div class="home-content">
+        <div class="home-title">EDGE DICE</div>
+        <div class="home-subtitle">谁将掌控命运的边缘</div>
+        <div class="role-cards">
+            <div class="role-card" onclick="onAdminCardClick()" role="button" tabindex="0">
+                <i class="fas fa-crown"></i><h2>ADMIN</h2>
+                <p>控制游戏参数，管理玩家状态，守护边缘次数不为零</p>
+                <div class="lock-hint"><i class="fas fa-lock"></i> 需要密码</div>
+            </div>
+            <div class="role-card" onclick="navigateTo('player')" role="button" tabindex="0">
+                <i class="fas fa-dice"></i><h2>PLAYER</h2>
+                <p>消耗边缘次数赢取积分，掷出骰子改变命运，清空剩余次数</p>
+            </div>
+        </div>
+        <div class="home-footer">
+            <a onclick="showSetup()"><i class="fas fa-cloud"></i> 云同步设置</a>
+            <a onclick="showHelp()"><i class="fas fa-circle-question"></i> 如何让朋友一起玩</a>
+        </div>
+    </div>
+</div>
+
+<!-- ========== 玩家页面 ========== -->
+<div id="player-page" class="page">
+    <nav class="top-bar">
+        <button class="back-btn" onclick="navigateTo('home')"><i class="fas fa-arrow-left"></i> 返回</button>
+        <div class="page-title">EDGE DICE</div>
+        <div class="top-bar-right"><div class="sync-indicator" id="p-sync"><div class="sync-dot" id="p-sync-dot"></div><span id="p-sync-text">本地</span></div></div>
+    </nav>
+    <div class="stats-grid">
+        <div class="card"><div class="card-label">剩余边缘次数</div><div class="card-value accent" id="p-edge-count">0</div></div>
+        <div class="card"><div class="card-label">当前利率</div><div class="card-value" id="p-rate">1.00%</div></div>
+        <div class="card"><div class="card-label">积分</div><div class="card-value" id="p-points">0</div></div>
+        <div class="card"><div class="card-label">边缘进度</div><div class="card-value" id="p-progress-text">0</div></div>
+    </div>
+    <div style="padding:0 24px 16px;max-width:900px;margin:0 auto;"><div class="progress-wrap"><div class="progress-bar"><div class="progress-fill" id="p-progress-bar" style="width:0%"></div></div><div class="progress-text" id="p-progress-detail"></div></div></div>
+    <div class="ban-banner" id="p-ban-banner" style="display:none;"><i class="fas fa-ban"></i><div class="ban-text">不得边缘</div><div class="ban-timer ban-timer-pulse" id="p-ban-timer">--:--:--</div></div>
+    <div class="dice-section">
+        <div style="position:relative;"><div class="dice-glow" id="dice-glow"></div>
+        <div class="dice-scene"><div class="dice-cube idle" id="dice-cube">
+            <div class="dice-face face-1"><div class="dot-cell"></div><div class="dot-cell"></div><div class="dot-cell"></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"></div><div class="dot-cell"></div><div class="dot-cell"></div></div>
+            <div class="dice-face face-6"><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div></div>
+            <div class="dice-face face-2"><div class="dot-cell"></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"></div></div>
+            <div class="dice-face face-5"><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div></div>
+            <div class="dice-face face-3"><div class="dot-cell"></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"></div></div>
+            <div class="dice-face face-4"><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div><div class="dot-cell"></div><div class="dot-cell"><div class="dot"></div></div></div>
+        </div></div></div>
+        <button class="btn btn-accent" id="roll-btn" onclick="handleRoll()"><i class="fas fa-dice"></i> 掷骰子（1积分）</button>
+    </div>
+    <div class="edge-section"><div class="card"><span class="edge-label"><i class="fas fa-bolt" style="color:var(--accent);margin-right:6px;"></i>边缘操作</span>
+        <div class="btn-group" id="edge-btns">
+            <button class="btn btn-outline btn-sm" onclick="handleEdge(1)">+1</button><button class="btn btn-outline btn-sm" onclick="handleEdge(10)">+10</button><button class="btn btn-outline btn-sm" onclick="handleEdge(50)">+50</button><button class="btn btn-outline btn-sm" onclick="handleEdge(100)">+100</button><button class="btn btn-outline btn-sm" onclick="handleEdge('max')">全部</button>
+        </div>
+    </div></div>
+    <div style="padding:0 24px;max-width:900px;margin:0 auto;"><div class="card"><div class="card-label" style="margin-bottom:12px;">掷骰记录</div><div class="history-list" id="p-history"><div style="text-align:center;color:var(--muted);padding:20px;font-size:13px;">暂无记录</div></div></div></div>
+</div>
+
+<!-- ========== 管理员页面 ========== -->
+<div id="admin-page" class="page">
+    <nav class="top-bar">
+        <button class="back-btn" onclick="navigateTo('home')"><i class="fas fa-arrow-left"></i> 返回</button>
+        <div class="page-title">ADMIN</div>
+        <div class="top-bar-right"><div class="sync-indicator"><div class="sync-dot" id="a-sync-dot"></div><span id="a-sync-text">本地</span></div></div>
+    </nav>
+    <div class="main-container" style="padding-top:8px;">
+        <div class="admin-section"><div class="admin-section-title"><i class="fas fa-chart-bar" style="margin-right:8px;"></i>当前状态</div><div class="admin-status-grid" id="admin-status"></div></div>
+        <div class="admin-section"><div class="admin-section-title"><i class="fas fa-sliders-h" style="margin-right:8px;"></i>参数设置</div><div class="card">
+            <div class="admin-row"><label>每积分所需边缘次数</label><input type="number" id="a-edges-per-point" min="1" max="10000" value="100"><button class="btn btn-accent btn-sm" onclick="applyEdgesPerPoint()">应用</button></div>
+            <div class="admin-row"><label>起始边缘次数</label><input type="number" id="a-initial-count" min="1" max="9999999" value="1000"><button class="btn btn-accent btn-sm" onclick="applyInitialCount()">应用</button></div>
+        </div></div>
+        <div class="admin-section"><div class="admin-section-title"><i class="fas fa-edit" style="margin-right:8px;"></i>手动调整</div><div class="card">
+            <div style="margin-bottom:16px;"><div style="font-size:13px;color:var(--muted);margin-bottom:10px;">积分调整</div><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="adjustPoints(-5)">-5</button><button class="btn btn-outline btn-sm" onclick="adjustPoints(-1)">-1</button><button class="btn btn-outline btn-sm" onclick="adjustPoints(1)">+1</button><button class="btn btn-outline btn-sm" onclick="adjustPoints(5)">+5</button><button class="btn btn-outline btn-sm" onclick="adjustPoints(10)">+10</button></div></div>
+            <div style="margin-bottom:16px;"><div style="font-size:13px;color:var(--muted);margin-bottom:10px;">次数调整</div><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="adjustEdge(-500)">-500</button><button class="btn btn-outline btn-sm" onclick="adjustEdge(-100)">-100</button><button class="btn btn-outline btn-sm" onclick="adjustEdge(100)">+100</button><button class="btn btn-outline btn-sm" onclick="adjustEdge(500)">+500</button><button class="btn btn-outline btn-sm" onclick="adjustEdge(1000)">+1000</button></div></div>
+            <div><div style="font-size:13px;color:var(--muted);margin-bottom:10px;">利率调整</div><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="adjustRate(0.005)">+0.5%</button><button class="btn btn-outline btn-sm" onclick="adjustRate(-0.005)">-0.5%</button><button class="btn btn-outline btn-sm" onclick="doubleRate()">翻倍</button><button class="btn btn-outline btn-sm" onclick="halveRate()">减半</button><button class="btn btn-outline btn-sm" onclick="resetRate()">重置1%</button></div></div>
+        </div></div>
+        <div class="admin-section"><div class="admin-section-title"><i class="fas fa-exclamation-triangle" style="margin-right:8px;color:var(--danger);"></i>危险操作</div><div class="card" style="border-color:rgba(231,76,60,0.2);"><div class="btn-group">
+            <button class="btn btn-danger btn-sm" onclick="requestResetGame()"><i class="fas fa-redo"></i> 重置游戏</button><button class="btn btn-danger btn-sm" onclick="requestClearHistory()"><i class="fas fa-trash"></i> 清空记录</button><button class="btn btn-danger btn-sm" onclick="liftBan()"><i class="fas fa-unlock"></i> 解除边缘禁令</button>
+        </div></div></div>
+        <div class="admin-section"><div class="admin-section-title"><i class="fas fa-scroll" style="margin-right:8px;"></i>管理员日志</div><div class="card"><div class="history-list" id="a-history" style="max-height:400px;"><div style="text-align:center;color:var(--muted);padding:20px;font-size:13px;">暂无日志</div></div></div></div>
+    </div>
+</div>
+
+<!-- ========== 结果弹窗 ========== -->
+<div class="result-overlay" id="result-overlay">
+    <div class="result-card" id="result-card"></div>
+</div>
+
+<!-- ========== 通用弹窗 ========== -->
+<div class="overlay" id="overlay">
+    <div class="overlay-card" id="overlay-card"></div>
+</div>
+
+<!-- ========== Toast ========== -->
+<div id="toast-container"></div>
+
+<!-- ========== JS ========== -->
+<script>
+/* =============================================
+   边缘骰子 · Edge Dice — 游戏引擎
+   ============================================= */
+
+// ---- Game State ----
+const STATE_KEY = 'edge-dice-state';
+const ADMIN_PASSWORD = 'edge2024'; // 管理员密码，可自行修改
+
+let state = loadState();
+let isRolling = false;
+let banTimer = null;
+let dbRef = null;        // Firebase Realtime DB reference
+let isOnline = false;    // 云端同步状态
+
+// ---- Default State ----
+function defaultState() {
+    return {
+        edgeCount: 1000,
+        points: 0,
+        rate: 0.01,            // 利率 1%
+        edgesPerPoint: 100,    // 每1积分需100边缘次数
+        initialCount: 1000,    // 起始边缘次数
+        currentProgress: 0,    // 当前边缘进度（累计）
+        banUntil: 0,           // 禁令结束时间戳
+        history: [],           // 掷骰记录
+        adminLog: []           // 管理员操作日志
+    };
+}
+
+function loadState() {
+    try {
+        const saved = localStorage.getItem(STATE_KEY);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            return { ...defaultState(), ...parsed };
+        }
+    } catch(e) { console.warn('加载存档失败:', e); }
+    return defaultState();
+}
+
+function saveState() {
+    try {
+        localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    } catch(e) { console.warn('保存存档失败:', e); }
+}
+
+// ---- Navigation ----
+function navigateTo(page) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const target = document.getElementById(page + '-page');
+    if (target) {
+        target.classList.add('active');
+        if (page === 'player') refreshPlayerUI();
+        if (page === 'admin') refreshAdminUI();
+    }
+}
+
+// ---- Toast System ----
+function toast(msg, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+// ---- Number Flash Animation ----
+function flashElement(el) {
+    el.classList.remove('num-flash');
+    void el.offsetWidth; // trigger reflow
+    el.classList.add('num-flash');
+}
+
+// ---- Dice Rolling ----
+const FACE_ROTATIONS = {
+    1: 'rotateX(0deg) rotateY(0deg)',
+    2: 'rotateX(0deg) rotateY(-90deg)',
+    3: 'rotateX(-90deg) rotateY(0deg)',
+    4: 'rotateX(90deg) rotateY(0deg)',
+    5: 'rotateX(0deg) rotateY(90deg)',
+    6: 'rotateX(180deg) rotateY(0deg)',
+};
+
+function handleRoll() {
+    if (isRolling) return;
+
+    // 检查禁令
+    if (Date.now() < state.banUntil) {
+        toast('你正处于边缘禁令中！', 'error');
+        return;
+    }
+
+    // 检查积分
+    if (state.points < 1) {
+        toast('积分不足！需要消耗边缘次数获取积分', 'error');
+        return;
+    }
+
+    isRolling = true;
+    const cube = document.getElementById('dice-cube');
+    const rollBtn = document.getElementById('roll-btn');
+    const glow = document.getElementById('dice-glow');
+    rollBtn.disabled = true;
+
+    // 扣除积分
+    state.points -= 1;
+
+    // 骰子动画
+    cube.classList.remove('idle');
+    cube.classList.add('spinning');
+    glow.classList.add('show');
+
+    setTimeout(() => {
+        // 生成结果
+        const result = Math.floor(Math.random() * 6) + 1;
+        const isEdge = result === 1;
+
+        // 停止旋转，显示结果面
+        cube.classList.remove('spinning');
+        cube.style.transform = FACE_ROTATIONS[result];
+
+        setTimeout(() => {
+            glow.classList.remove('show');
+
+            if (isEdge) {
+                // 边缘！
+                const progressLost = state.currentProgress;
+                state.currentProgress = 0;
+                // 利率增加（边缘惩罚）
+                state.rate = Math.min(state.rate + 0.005, 0.5);
+
+                // 添加禁令（5分钟）
+                state.banUntil = Date.now() + 5 * 60 * 1000;
+
+                addHistory(result, true, `边缘！进度 ${progressLost} 归零，利率升至 ${(state.rate * 100).toFixed(2)}%`);
+                showResult(result, true, `进度 ${progressLost} 归零`, `利率升至 ${(state.rate * 100).toFixed(2)}%，5分钟内不得掷骰`);
+            } else {
+                // 安全
+                const progressGain = result; // 点数就是进度增量
+                state.currentProgress += progressGain;
+
+                // 检查是否达成积分
+                if (state.currentProgress >= state.edgesPerPoint) {
+                    const pointsGained = Math.floor(state.currentProgress / state.edgesPerPoint);
+                    const remainder = state.currentProgress % state.edgesPerPoint;
+                    state.points += pointsGained;
+                    state.currentProgress = remainder;
+                    addHistory(result, false, `安全！+${progressGain}进度，获得 ${pointsGained} 积分`);
+                } else {
+                    addHistory(result, false, `安全！+${progressGain}进度`);
+                }
+
+                // 利率下降（安全奖励）
+                state.rate = Math.max(state.rate - 0.001, 0.005);
+
+                showResult(result, false, `+${progressGain} 边缘进度`, `当前进度 ${state.currentProgress}/${state.edgesPerPoint}`);
+            }
+
+            // 应用利率效果：每[SYSTEM_NOTE: Content compressed. Read the full version has been saved.]     rate: state.rate,
+            edgesPerPoint: state.edgesPerPoint,
+            initialCount: state.initialCount,
+            currentProgress: state.currentProgress,
+            banUntil: state.banUntil,
+            history: state.history.slice(-50),
+            adminLog: state.adminLog.slice(-50)
+        });
+    }, 1400); // spinning animation duration
+}
+
+// ---- Result Overlay ----
+function showResult(num, isEdge, desc, detail) {
+    const overlay = document.getElementById('result-overlay');
+    const card = document.getElementById('result-card');
+    const numColor = isEdge ? 'color:var(--danger)' : 'color:var(--success)';
+    const descText = isEdge ? '边 缘' : '安 全';
+    const borderColor = isEdge ? 'border-color:rgba(231,76,60,0.4)' : 'border-color:rgba(46,204,113,0.4)';
+
+    card.style.cssText = borderColor;
+    card.innerHTML = `
+        <div class="result-num" style="${numColor}">${num}</div>
+        <div class="result-desc" style="${numColor}">${descText}</div>
+        <div class="result-detail">${desc}<br>${detail}</div>
+        <button class="btn ${isEdge ? 'btn-danger' : 'btn-accent'}" onclick="closeResult()">继续</button>
+    `;
+    overlay.classList.add('show');
+
+    if (isEdge) {
+        card.style.animation = 'none';
+        void card.offsetWidth;
+        card.style.animation = 'shake 0.6s ease, resultPop 0.5s cubic-bezier(.2,.8,.3,1)';
+    }
+
+    saveState();
+    syncToCloud();
+}
+
+function closeResult() {
+    document.getElementById('result-overlay').classList.remove('show');
+    isRolling = false;
+    document.getElementById('roll-btn').disabled = false;
+    refreshPlayerUI();
+}
+
+// ---- Edge Operation ----
+function handleEdge(amount) {
+    if (amount === 'max') {
+        // 消耗所有边缘次数换积分
+        if (state.edgeCount <= 0) {
+            toast('没有剩余边缘次数！', 'error');
+            return;
+        }
+        const pointsGained = Math.floor(state.edgeCount / state.edgesPerPoint);
+        const remainder = state.edgeCount % state.edgesPerPoint;
+        if (pointsGained <= 0) {
+            toast(`需要至少 ${state.edgesPerPoint} 次才能兑换1积分`, 'error');
+            return;
+        }
+        state.points += pointsGained;
+        state.edgeCount = remainder;
+        state.currentProgress += state.edgeCount;
+        if (state.currentProgress >= state.edgesPerPoint) {
+            const extraPoints = Math.floor(state.currentProgress / state.edgesPerPoint);
+            state.points += extraPoints;
+            state.currentProgress = state.currentProgress % state.edgesPerPoint;
+        }
+        state.edgeCount = 0;
+        addHistory(0, false, `全部兑换！获得 ${pointsGained} 积分`);
+        toast(`兑换 ${pointsGained} 积分！`, 'success');
+    } else {
+        // 消耗指定次数
+        if (state.edgeCount < amount) {
+            toast('边缘次数不足！', 'error');
+            return;
+        }
+        state.edgeCount -= amount;
+        state.currentProgress += amount;
+        let extraMsg = '';
+        if (state.currentProgress >= state.edgesPerPoint) {
+            const pointsGained = Math.floor(state.currentProgress / state.edgesPerPoint);
+            state.points += pointsGained;
+            state.currentProgress = state.currentProgress % state.edgesPerPoint;
+            extraMsg = `，获得 ${pointsGained} 积分！`;
+        }
+        addHistory(0, false, `消耗 ${amount} 边缘次数，进度 +${amount}${extraMsg}`);
+        toast(`-${amount} 边缘次数${extraMsg}`, 'success');
+    }
+    saveState();
+    syncToCloud();
+    refreshPlayerUI();
+}
+
+// ---- History ----
+function addHistory(num, isEdge, desc) {
+    state.history.unshift({
+        num, isEdge, desc,
+        time: Date.now()
+    });
+    if (state.history.length > 50) state.history = state.history.slice(0, 50);
+}
+
+function renderHistory(containerId) {
+    const container = document.getElementById(containerId);
+    if (!state.history.length) {
+        container.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;font-size:13px;">暂无记录</div>';
+        return;
+    }
+    container.innerHTML = state.history.map(h => {
+        const dotClass = h.isEdge ? 'bad' : (h.num > 0 ? 'good' : 'neutral');
+        const dotText = h.num > 0 ? h.num : '★';
+        const time = new Date(h.time);
+        const timeStr = `${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`;
+        return `<div class="history-item"><div class="history-dot ${dotClass}">${dotText}</div><div class="history-desc">${h.desc}</div><div class="history-time">${timeStr}</div></div>`;
+    }).join('');
+}
+
+// ---- Admin Functions ----
+function onAdminCardClick() {
+    // 显示密码输入弹窗
+    const overlay = document.getElementById('overlay');
+    const card = document.getElementById('overlay-card');
+    card.className = 'overlay-card login-card';
+    card.innerHTML = `
+        <div class="login-icon"><i class="fas fa-crown"></i></div>
+        <div class="login-title">ADMIN</div>
+        <div class="login-sub">输入管理员密码</div>
+        <div class="login-input-wrap">
+            <label>密码</label>
+            <input type="password" id="admin-pw-input" placeholder="输入管理员密码" onkeydown="if(event.key==='Enter')verifyAdmin()">
+            <button class="toggle-pw" onclick="togglePw('admin-pw-input',this)"><i class="fas fa-eye"></i></button>
+        </div>
+        <div class="login-error" id="admin-pw-error"></div>
+        <div class="login-btns">
+            <button class="btn btn-outline" onclick="closeOverlay()">取消</button>
+            <button class="btn btn-accent" onclick="verifyAdmin()">进入</button>
+        </div>
+    `;
+    overlay.classList.add('show');
+    setTimeout(() => document.getElementById('admin-pw-input')?.focus(), 100);
+}
+
+function verifyAdmin() {
+    const pw = document.getElementById('admin-pw-input')?.value;
+    if (pw === ADMIN_PASSWORD) {
+        closeOverlay();
+        navigateTo('admin');
+    } else {
+        document.getElementById('admin-pw-error').textContent = '密码错误';
+    }
+}
+
+function togglePw(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.innerHTML = '<i class="fas fa-eye-slash"></i>';
+    } else {
+        input.type = 'password';
+        btn.innerHTML = '<i class="fas fa-eye"></i>';
+    }
+}
+
+function closeOverlay() {
+    document.getElementById('overlay').classList.remove('show');
+}
+
+function addAdminLog(action) {
+    state.adminLog.unshift({ action, time: Date.now() });
+    if (state.adminLog.length > 50) state.adminLog = state.adminLog.slice(0, 50);
+    saveState();
+}
+
+function applyEdgesPerPoint() {
+    const val = parseInt(document.getElementById('a-edges-per-point').value);
+    if (val >= 1 && val <= 10000) {
+        state.edgesPerPoint = val;
+        addAdminLog(`设置每积分需 ${val} 边缘次数`);
+        toast(`每积分需 ${val} 边缘次数`, 'success');
+        saveState();
+        syncToCloud();
+        refreshAdminUI();
+    } else {
+        toast('范围：1-10000', 'error');
+    }
+}
+
+function applyInitialCount() {
+    const val = parseInt(document.getElementById('a-initial-count').value);
+    if (val >= 1 && val <= 9999999) {
+        state.initialCount = val;
+        addAdminLog(`设置起始边缘次数 ${val}`);
+        toast(`起始边缘次数 ${val}`, 'success');
+        saveState();
+        syncToCloud();
+    } else {
+        toast('范围：1-9999999', 'error');
+    }
+}
+
+function adjustPoints(delta) {
+    state.points = Math.max(0, state.points + delta);
+    addAdminLog(`积分调整 ${delta > 0 ? '+' : ''}${delta}，当前 ${state.points}`);
+    toast(`积分 ${delta > 0 ? '+' : ''}${delta}`, delta > 0 ? 'success' : 'info');
+    saveState();
+    syncToCloud();
+    refreshAdminUI();
+}
+
+function adjustEdge(delta) {
+    state.edgeCount = Math.max(0, state.edgeCount + delta);
+    addAdminLog(`边缘次数调整 ${delta > 0 ? '+' : ''}${delta}，当前 ${state.edgeCount}`);
+    toast(`边缘次数 ${delta > 0 ? '+' : ''}${delta}`, delta > 0 ? 'success' : 'info');
+    saveState();
+    syncToCloud();
+    refreshAdminUI();
+}
+
+function adjustRate(delta) {
+    state.rate = Math.max(0.001, Math.min(0.5, state.rate + delta));
+    addAdminLog(`利率调整 ${delta > 0 ? '+' : ''}${(delta*100).toFixed(1)}%，当前 ${(state.rate*100).toFixed(2)}%`);
+    toast(`利率 ${(state.rate*100).toFixed(2)}%`, 'info');
+    saveState();
+    syncToCloud();
+    refreshAdminUI();
+}
+
+function doubleRate() { adjustRate(state.rate); }
+function halveRate() { adjustRate(-state.rate / 2); }
+function resetRate() { state.rate = 0.01; addAdminLog('利率重置为1%'); toast('利率重置为1%', 'info'); saveState(); syncToCloud(); refreshAdminUI(); }
+
+function requestResetGame() {
+    showConfirm('重置游戏', '所有数据将被清除，此操作不可逆！', () => {
+        state = defaultState();
+        addAdminLog('游戏已重置');
+        toast('游戏已重置', 'info');
+        saveState();
+        syncToCloud();
+        refreshAdminUI();
+    });
+}
+
+function requestClearHistory() {
+    showConfirm('清空记录', '所有掷骰记录将被删除', () => {
+        state.history = [];
+        state.adminLog = [];
+        addAdminLog('记录已清空');
+        toast('记录已清空', 'info');
+        saveState();
+        refreshAdminUI();
+    });
+}
+
+function liftBan() {
+    state.banUntil = 0;
+    addAdminLog('边缘禁令已解除');
+    toast('禁令已解除', 'success');
+    saveState();
+    syncToCloud();
+    refreshPlayerUI();
+}
+
+function showConfirm(title, msg, onConfirm) {
+    const overlay = document.getElementById('overlay');
+    const card = document.getElementById('overlay-card');
+    card.className = 'overlay-card danger-border';
+    card.innerHTML = `
+        <div class="overlay-icon danger"><i class="fas fa-exclamation-triangle"></i></div>
+        <div class="overlay-msg">${title}</div>
+        <div class="overlay-sub">${msg}</div>
+        <div class="overlay-btns">
+            <button class="btn btn-outline" onclick="closeOverlay()">取消</button>
+            <button class="btn btn-danger" onclick="closeOverlay();(${onConfirm.toString()})()">确认</button>
+        </div>
+    `;
+    overlay.classList.add('show');
+}
+
+// ---- UI Refresh ----
+function refreshPlayerUI() {
+    // 统计卡片
+    const edgeEl = document.getElementById('p-edge-count');
+    const rateEl = document.getElementById('p-rate');
+    const pointsEl = document.getElementById('p-points');
+    const progressTextEl = document.getElementById('p-progress-text');
+
+    if (edgeEl) { edgeEl.textContent = state.edgeCount; flashElement(edgeEl); }
+    if (rateEl) rateEl.textContent = (state.rate * 100).toFixed(2) + '%';
+    if (pointsEl) { pointsEl.textContent = state.points; flashElement(pointsEl); }
+    if (progressTextEl) progressTextEl.textContent = state.currentProgress;
+
+    // 进度条
+    const bar = document.getElementById('p-progress-bar');
+    const detail = document.getElementById('p-progress-detail');
+    const pct = Math.min((state.currentProgress / state.edgesPerPoint) * 100, 100);
+    if (bar) bar.style.width = pct + '%';
+    if (detail) detail.textContent = `${state.currentProgress} / ${state.edgesPerPoint} (${pct.toFixed(1)}%)`;
+
+    // 禁令
+    updateBanDisplay();
+
+    // 边缘按钮禁用状态
+    document.querySelectorAll('#edge-btns .btn-outline').forEach(btn => {
+        btn.disabled = state.edgeCount <= 0;
+    });
+
+    // 掷骰按钮
+    const rollBtn = document.getElementById('roll-btn');
+    if (rollBtn) rollBtn.disabled = state.points < 1 || Date.now() < state.banUntil;
+
+    // 历史
+    renderHistory('p-history');
+}
+
+function refreshAdminUI() {
+    // 状态网格
+    const statusEl = document.getElementById('admin-status');
+    if (statusEl) {
+        statusEl.innerHTML = `
+            <div class="admin-stat"><div class="stat-label">边缘次数</div><div class="stat-value" style="color:var(--accent)">${state.edgeCount}</div></div>
+            <div class="admin-stat"><div class="stat-label">积分</div><div class="stat-value">${state.points}</div></div>
+            <div class="admin-stat"><div class="stat-label">利率</div><div class="stat-value">${(state.rate*100).toFixed(2)}%</div></div>
+            <div class="admin-stat"><div class="stat-label">当前进度</div><div class="stat-value">${state.currentProgress}/${state.edgesPerPoint}</div></div>
+            <div class="admin-stat"><div class="stat-label">禁令状态</div><div class="stat-value" style="color:${state.banUntil > Date.now() ? 'var(--danger)' : 'var(--success)'}">${state.banUntil > Date.now() ? '禁令中' : '无'}</div></div>
+            <div class="admin-stat"><div class="stat-label">记录数</div><div class="stat-value">${state.history.length}</div></div>
+        `;
+    }
+
+    // 输入框同步
+    const eppInput = document.getElementById('a-edges-per-point');
+    const icInput = document.getElementById('a-initial-count');
+    if (eppInput) eppInput.value = state.edgesPerPoint;
+    if (icInput) icInput.value = state.initialCount;
+
+    // 管理员日志
+    const logEl = document.getElementById('a-history');
+    if (logEl) {
+        if (!state.adminLog.length) {
+            logEl.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;font-size:13px;">暂无日志</div>';
+        } else {
+            logEl.innerHTML = state.adminLog.map(l => {
+                const t = new Date(l.time);
+                const ts = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`;
+                return `<div class="history-item"><div class="history-dot neutral"><i class="fas fa-cog" style="font-size:12px;"></i></div><div class="history-desc">${l.action}</div><div class="history-time">${ts}</div></div>`;
+            }).join('');
+        }
+    }
+}
+
+// ---- Ban Timer ----
+function updateBanDisplay() {
+    const banner = document.getElementById('p-ban-banner');
+    const timerEl = document.getElementById('p-ban-timer');
+    if (!banner) return;
+
+    if (Date.now() < state.banUntil) {
+        banner.style.display = '';
+        const remaining = state.banUntil - Date.now();
+        const h = Math.floor(remaining / 3600000);
+        const m = Math.floor((remaining % 3600000) / 60000);
+        const s = Math.floor((remaining % 60000) / 1000);
+        if (timerEl) timerEl.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    } else {
+        banner.style.display = 'none';
+        if (state.banUntil > 0) {
+            state.banUntil = 0;
+            saveState();
+        }
+    }
+}
+
+setInterval(updateBanDisplay, 1000);
+
+// ---- Interest / Decay Tick (every 30s) ----
+setInterval(() => {
+    if (state.edgeCount > 0) {
+        // 利率效果：边缘次数按利率衰减
+        const decay = Math.ceil(state.edgeCount * state.rate * 0.1);
+        if (decay > 0) {
+            state.edgeCount = Math.max(0, state.edgeCount - decay);
+            saveState();
+            // 不频繁刷UI，只更新显示值
+            const el = document.getElementById('p-edge-count');
+            if (el) el.textContent = state.edgeCount;
+        }
+    }
+}, 30000);
+
+// ---- Firebase Cloud Sync ----
+function showSetup() {
+    const overlay = document.getElementById('overlay');
+    const card = document.getElementById('overlay-card');
+    card.className = 'overlay-card setup-card';
+    card.innerHTML = `
+        <div class="setup-icon"><i class="fas fa-cloud"></i></div>
+        <div class="setup-title">CLOUD SYNC</div>
+        <div class="setup-sub">通过 Firebase Realtime Database 实现多设备数据同步</div>
+        <div class="step"><span class="step-num">1</span>前往 <b>console.firebase.google.com</b> 创建项目</div>
+        <div class="step"><span class="step-num">2</span>启用 <b>Realtime Database</b>（测试模式）</div>
+        <div class="step"><span class="step-num">3</span>复制项目配置填入下方</div>
+        <div class="setup-input-group"><label>API Key</label><input id="s-apiKey" placeholder="AIzaSy..." value="${localStorage.getItem('ed-fb-apiKey') || ''}"></div>
+        <div class="setup-input-group"><label>Auth Domain</label><input id="s-authDomain" placeholder="xxx.firebaseapp.com" value="${localStorage.getItem('ed-fb-authDomain') || ''}"></div>
+        <div class="setup-input-group"><label>Database URL</label><input id="s-databaseURL" placeholder="https://xxx-default-rtdb.firebaseio.com" value="${localStorage.getItem('ed-fb-databaseURL') || ''}"></div>
+        <div class="setup-input-group"><label>Project ID</label><input id="s-projectId" placeholder="your-project-id" value="${localStorage.getItem('ed-fb-projectId') || ''}"></div>
+        <div class="setup-input-group"><label>App ID</label><input id="s-appId" placeholder="1:123:web:abc" value="${localStorage.getItem('ed-fb-appId') || ''}"></div>
+        <div class="overlay-btns" style="margin-top:20px;">
+            <button class="btn btn-outline" onclick="closeOverlay()">取消</button>
+            <button class="btn btn-accent" onclick="applyFirebaseConfig()">连接</button>
+        </div>
+    `;
+    overlay.classList.add('show');
+}
+
+function applyFirebaseConfig() {
+    const fields = ['apiKey','authDomain','databaseURL','projectId','appId'];
+    const config = {};
+    for (const f of fields) {
+        const val = document.getElementById('s-' + f)?.value?.trim();
+        if (!val) { toast(`请填写 ${f}`, 'error'); return; }
+        config[f] = val;
+        localStorage.setItem('ed-fb-' + f, val);
+    }
+    initFirebase(config);
+    closeOverlay();
+}
+
+function initFirebase(config) {
+    try {
+        if (firebase.apps.length) firebase.app().delete().then(() => startFirebase(config));
+        else startFirebase(config);
+    } catch(e) {
+        console.error('Firebase init error:', e);
+        toast('连接失败: ' + e.message, 'error');
+        updateSyncStatus(false);
+    }
+}
+
+function startFirebase(config) {
+    const app = firebase.initializeApp(config);
+    dbRef = firebase.database();
+    isOnline = true;
+    updateSyncStatus(true);
+    toast('云同步已连接！', 'success');
+
+    // 从云端加载最新数据
+    dbRef.ref('gameState').once('value').then(snap => {
+        if (snap.exists()) {
+            const cloudState = snap.val();
+            // 用云端数据覆盖本地（如果云端更新）
+            if (cloudState._updatedAt > (state._updatedAt || 0)) {
+                state = { ...defaultState(), ...cloudState };
+                saveState();
+                refreshPlayerUI();
+                refreshAdminUI();
+                toast('已从云端同步最新数据', 'info');
+            }
+        }
+        // 开始监听云端变化
+        dbRef.ref('gameState').on('value', snap => {
+            if (snap.exists()) {
+                const cloudState = snap.val();
+                if (cloudState._updatedAt > (state._updatedAt || 0)) {
+                    state = { ...defaultState(), ...cloudState };
+                    saveState();
+                    refreshPlayerUI();
+                    refreshAdminUI();
+                }
+            }
+        });
+    }).catch(e => {
+        console.error('Cloud load error:', e);
+        toast('云端数据加载失败', 'error');
+    });
+}
+
+function syncToCloud() {
+    if (!dbRef || !isOnline) return;
+    state._updatedAt = Date.now();
+    dbRef.ref('gameState').set({
+        edgeCount: state.edgeCount,
+        points: state.points,
+        rate: state.rate,
+        edgesPerPoint: state.edgesPerPoint,
+        initialCount: state.initialCount,
+        currentProgress: state.currentProgress,
+        banUntil: state.banUntil,
+        _updatedAt: state._updatedAt
+    }).catch(e => {
+        console.error('Sync error:', e);
+        updateSyncStatus(false);
+    });
+}
+
+function updateSyncStatus(online) {
+    isOnline = online;
+    ['p-sync-dot', 'a-sync-dot'].forEach(id => {
+        const dot = document.getElementById(id);
+        if (dot) { dot.className = 'sync-dot ' + (online ? 'online' : 'offline'); }
+    });
+    ['p-sync-text', 'a-sync-text'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = online ? '已同步' : '本地';
+    });
+}
+
+// ---- Help Overlay ----
+function showHelp() {
+    const overlay = document.getElementById('overlay');
+    const card = document.getElementById('overlay-card');
+    card.className = 'overlay-card setup-card';
+    card.innerHTML = `
+        <div class="setup-icon"><i class="fas fa-users"></i></div>
+        <div class="setup-title">MULTIPLAYER</div>
+        <div class="setup-sub">让朋友一起玩</div>
+        <div class="step"><span class="step-num">1</span>点击 <b>云同步设置</b>，配置 Firebase</div>
+        <div class="step"><span class="step-num">2</span>在 Firebase Console 设置 <b>Realtime Database 规则</b>为测试模式（允许读写）</div>
+        <div class="step"><span class="step-num">3</span>把你的 Firebase 配置信息发给朋友</div>
+        <div class="step"><span class="step-num">4</span>朋友在浏览器打开此页面，填入相同配置即可同步</div>
+        <div class="step" style="margin-top:12px;"><b style="color:var(--accent);">⚠️ 注意</b>：所有连入同一 Firebase 项目的设备共享同一个游戏状态，适合一对多场景</div>
+        <div class="overlay-btns" style="margin-top:24px;">
+            <button class="btn btn-accent" onclick="closeOverlay()">知道了</button>
+        </div>
+    `;
+    overlay.classList.add('show');
+}
+
+// ---- Background Canvas ----
+function initBgCanvas() {
+    const canvas = document.getElementById('bg-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let w, h, particles = [];
+
+    function resize() {
+        w = canvas.width = window.innerWidth;
+        h = canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // 创建粒子
+    for (let i = 0; i < 50; i++) {
+        particles.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            vx: (Math.random() - 0.5) * 0.3,
+            vy: (Math.random() - 0.5) * 0.3,
+            r: Math.random() * 2 + 0.5,
+            alpha: Math.random() * 0.3 + 0.1
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, w, h);
+
+        // 绘制渐变背景
+        const grad = ctx.createRadialGradient(w * 0.3, h * 0.4, 0, w * 0.3, h * 0.4, Math.max(w, h) * 0.8);
+        grad.addColorStop(0, '#0a0a14');
+        grad.addColorStop(1, '#020208');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 绘制粒子
+        particles.forEach(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+            if (p.x < 0) p.x = w;
+            if (p.x > w) p.x = 0;
+            if (p.y < 0) p.y = h;
+            if (p.y > h) p.y = 0;
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(212,148,26,${p.alpha})`;
+            ctx.fill();
+        });
+
+        // 连线
+        for (let i = 0; i < particles.length; i++) {
+            for (let j = i + 1; j < particles.length; j++) {
+                const dx = particles[i].x - particles[j].x;
+                const dy = particles[i].y - particles[j].y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 120) {
+                    ctx.beginPath();
+                    ctx.moveTo(particles[i].x, particles[i].y);
+                    ctx.lineTo(particles[j].x, particles[j].y);
+                    ctx.strokeStyle = `rgba(212,148,26,${0.06 * (1 - dist / 120)})`;
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                }
+            }
+        }
+
+        requestAnimationFrame(draw);
+    }
+    draw();
+}
+
+// ---- Auto-save on page unload ----
+window.addEventListener('beforeunload', () => {
+    saveState();
+    syncToCloud();
+});
+
+// ---- Init ----
+document.addEventListener('DOMContentLoaded', () => {
+    initBgCanvas();
+    refreshPlayerUI();
+    refreshAdminUI();
+    updateSyncStatus(false);
+
+    // 尝试恢复 Firebase 配置
+    const savedConfig = ['apiKey','authDomain','databaseURL','projectId','appId']
+        .every(f => localStorage.getItem('ed-fb-' + f));
+    if (savedConfig) {
+        const config = {};
+        ['apiKey','authDomain','databaseURL','projectId','appId'].forEach(f => {
+            config[f] = localStorage.getItem('ed-fb-' + f);
+        });
+        initFirebase(config);
+    }
+});
+</script>
+</body>
+</html>
