@@ -417,13 +417,14 @@ function handleRoll() {
 
     // 检查禁令
     if (Date.now() < state.banUntil) {
-        toast('你正处于边缘禁令中！', 'error');
+        const remain = Math.ceil((state.banUntil - Date.now()) / 60000);
+        toast(`边缘禁令中！还需等待 ${remain} 分钟`, 'error');
         return;
     }
 
     // 检查积分
     if (state.points < 1) {
-        toast('积分不足！需要消耗边缘次数获取积分', 'error');
+        toast('积分不足！用边缘次数兑换积分', 'error');
         return;
     }
 
@@ -441,61 +442,86 @@ function handleRoll() {
     cube.classList.add('spinning');
     glow.classList.add('show');
 
-    setTimeout(() => {
-        // 生成结果
+    // 1.3秒后停止旋转，显示结果
+    setTimeout(function() {
         const result = Math.floor(Math.random() * 6) + 1;
         const isEdge = result === 1;
 
-        // 停止旋转，显示结果面
+        // 停止旋转，转到结果面
         cube.classList.remove('spinning');
         cube.style.transform = FACE_ROTATIONS[result];
 
-        setTimeout(() => {
+        // 再等0.3秒让骰子停稳
+        setTimeout(function() {
             glow.classList.remove('show');
 
             if (isEdge) {
                 // 边缘！
                 const progressLost = state.currentProgress;
                 state.currentProgress = 0;
-                // 利率增加（边缘惩罚）
                 state.rate = Math.min(state.rate + 0.005, 0.5);
-
-                // 添加禁令（5分钟）
                 state.banUntil = Date.now() + 5 * 60 * 1000;
 
-                addHistory(result, true, `边缘！进度 ${progressLost} 归零，利率升至 ${(state.rate * 100).toFixed(2)}%`);
-                showResult(result, true, `进度 ${progressLost} 归零`, `利率升至 ${(state.rate * 100).toFixed(2)}%，5分钟内不得掷骰`);
+                addHistory(result, true, '边缘！进度 ' + progressLost + ' 归零，利率升至 ' + (state.rate * 100).toFixed(2) + '%');
+                showResult(result, true, '进度 ' + progressLost + ' 归零', '利率升至 ' + (state.rate * 100).toFixed(2) + '%，5分钟禁令');
             } else {
                 // 安全
-                const progressGain = result; // 点数就是进度增量
+                var progressGain = result;
                 state.currentProgress += progressGain;
 
-                // 检查是否达成积分
                 if (state.currentProgress >= state.edgesPerPoint) {
-                    const pointsGained = Math.floor(state.currentProgress / state.edgesPerPoint);
-                    const remainder = state.currentProgress % state.edgesPerPoint;
+                    var pointsGained = Math.floor(state.currentProgress / state.edgesPerPoint);
+                    var remainder = state.currentProgress % state.edgesPerPoint;
                     state.points += pointsGained;
                     state.currentProgress = remainder;
-                    addHistory(result, false, `安全！+${progressGain}进度，获得 ${pointsGained} 积分`);
+                    addHistory(result, false, '安全！+' + progressGain + '进度，获得 ' + pointsGained + ' 积分');
                 } else {
-                    addHistory(result, false, `安全！+${progressGain}进度`);
+                    addHistory(result, false, '安全！+' + progressGain + '进度');
                 }
 
-                // 利率下降（安全奖励）
                 state.rate = Math.max(state.rate - 0.001, 0.005);
-
-                showResult(result, false, `+${progressGain} 边缘进度`, `当前进度 ${state.currentProgress}/${state.edgesPerPoint}`);
+                showResult(result, false, '+' + progressGain + ' 边缘进度', '当前进度 ' + state.currentProgress + '/' + state.edgesPerPoint);
             }
 
-            // 应用利率效果：每[SYSTEM_NOTE: Content compressed. Read the full version has been saved.]     rate: state.rate,
+            // 应用利率衰减
+            applyRateDecay();
+
+            isRolling = false;
+            rollBtn.disabled = false;
+            saveState();
+            syncToCloud();
+            refreshPlayerUI();
+        }, 300);
+    }, 1300);
+}
+
+// ---- Rate Decay ----
+function applyRateDecay() {
+    // 边缘次数按利率衰减：每秒减少 edgeCount * rate
+    // 这里只在掷骰时触发一次衰减
+    const decay = Math.ceil(state.edgeCount * state.rate);
+    state.edgeCount = Math.max(0, state.edgeCount - decay);
+}
+
+// ---- Sync State to Cloud ----
+function syncToCloud() {
+    if (!isOnline || !dbRef) return;
+    try {
+        dbRef.ref('gameState').set({
+            edgeCount: state.edgeCount,
+            points: state.points,
+            rate: state.rate,
             edgesPerPoint: state.edgesPerPoint,
             initialCount: state.initialCount,
             currentProgress: state.currentProgress,
             banUntil: state.banUntil,
             history: state.history.slice(-50),
-            adminLog: state.adminLog.slice(-50)
+            adminLog: state.adminLog.slice(-50),
+            _updatedAt: Date.now()
         });
-    }, 1400); // spinning animation duration
+    } catch (e) {
+        console.error('Sync error:', e);
+    }
 }
 
 // ---- Result Overlay ----
