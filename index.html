@@ -758,6 +758,24 @@ function deletePlayer(pid) {
     });
 }
 
+function showConfirm(title, msg, onConfirm) {
+    var overlay = document.getElementById('overlay');
+    var card = document.getElementById('overlay-card');
+    var cbName = '_cb_' + Date.now();
+    window[cbName] = function() {
+        closeOverlay();
+        onConfirm();
+        delete window[cbName];
+    };
+    card.className = 'overlay-card danger-border';
+    card.innerHTML = '<div class="overlay-icon danger"><i class="fas fa-exclamation-triangle"></i></div>' +
+        '<div class="overlay-msg">' + title + '</div>' +
+        '<div class="overlay-sub" style="color:var(--muted);font-size:13px;text-align:center;margin-bottom:20px;">' + msg + '</div>' +
+        '<div style="display:flex;gap:12px;"><button class="btn btn-outline" style="flex:1;" onclick="closeOverlay()">取消</button>' +
+        '<button class="btn btn-danger" style="flex:1;" onclick="' + cbName + '()">确认</button></div>';
+    overlay.classList.add('show');
+}
+
 function resetPlayer(pid) {
     var pData = defaultState();
     pData.lastActive = Date.now();
